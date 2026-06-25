@@ -1,115 +1,246 @@
-# Galatiq Case: Invoice Processing Automation
+Invoice Processing Automation
 
-## Background
+Project Overview
 
-Acme Corp is a PE-backed manufacturing firm losing **$2M/year** on manual invoice processing. Invoices arrive via email as PDFs in messy formats with frequent errors. Staff manually extract data, validate against a legacy inventory database (inconsistent), obtain VP approval (via email chains), and process payment (via a banking API).
+This project implements an end-to-end invoice processing workflow for Acme Corp using a multi-agent architecture built with LangGraph. The workflow ingests invoices from multiple file formats, extracts structured information, validates invoice data against a local SQLite inventory database, performs an approval decision with a review step, and finally executes a mock payment for approved invoices.
 
-**Current pain points:**
-- 30% error rate
-- 5-day processing delays
-- Frustrated stakeholders
+The implementation follows the assessment requirements while keeping the workflow deterministic wherever possible and using an LLM only where reasoning adds value. The goal was to build a working prototype that is reliable, testable, and easy to extend.
 
-## Objective
+⸻
 
-Build a **multi-agent system** that automates the end-to-end invoice processing workflow. The system must run as a working prototype — not just designs or slides.
+Requirements Mapping
 
-## Workflow
+Assessment Requirement	Implementation
+Multi-agent workflow	LangGraph StateGraph
+Invoice ingestion	TXT, PDF, CSV and JSON
+Structured extraction	Pydantic models
+Inventory validation	SQLite database
+Approval reasoning	Rule-based approval with reflection and optional Grok review
+Payment	Mock payment function
+Local execution	Python CLI
+Automated tests	pytest
 
-The system should handle four stages:
+⸻
 
-1. **Ingestion** — Extract structured data from invoice documents (PDFs, text files). Fields include: Vendor, Amount, Items (with quantities), and Due Date. Expect unstructured text, typos, missing data, and potentially fraudulent entries.
+Architecture
 
-2. **Validation** — Verify extracted data against a mock inventory database (SQLite). Flag mismatches such as quantity exceeding available stock or items not found in inventory.
+Invoice
+    │
+    ▼
+Ingestion Agent
+    │
+    ▼
+Validation Agent
+    │
+    ▼
+Approval Agent
+    │
+    ▼
+Payment Agent
 
-3. **Approval** — Simulate VP-level review with rule-based decision-making (e.g., invoices over $10K require additional scrutiny). The agent should reason through approval/rejection with a reflection or critique loop.
+Ingestion Agent
 
-4. **Payment** — If approved, call a mock payment function. If rejected, log the rejection with reasoning.
+* Reads invoice files
+* Supports TXT, PDF, JSON and CSV
+* Extracts structured invoice information
+* Produces a shared workflow state
 
-## Technical Requirements
+Validation Agent
 
-- **LLM Integration**: Use xAI's Grok as the core reasoning engine (via the xAI API at https://grok.x.ai). Other models are acceptable if you don't have an API key.
-- **Multi-Agent Orchestration**: Use a framework such as LangGraph, CrewAI, AutoGen, or a custom solution.
-- **Agent Capabilities**: Function calling / tool use, structured outputs, and self-correction loops.
-- **Runtime**: Assume no internet for external APIs — simulate everything locally.
-- **Tech Stack**: Python (preferred), with libraries like `langchain`, `crewai`, `autogen`, `pdfplumber`, `PyMuPDF`, etc. Run locally — no cloud deployment.
+* Validates required fields
+* Checks inventory using SQLite
+* Detects unknown items
+* Detects insufficient stock
+* Detects invalid quantities
 
-## Provided Resources
+Approval Agent
 
-### Mock Invoice Data
+* Applies business approval rules
+* Reviews validation results
+* Produces approval or rejection
+* Performs a reflection step
+* Uses Grok when configured and gracefully falls back to local reasoning if unavailable
 
-Sample invoices are provided in the `data/invoices/` directory in various formats (PDF, CSV, JSON, TXT). Use these as inputs for testing. The data intentionally includes a mix of clean entries and problematic ones — identifying and handling issues is part of the challenge.
+Payment Agent
 
-### Mock Inventory Database (Required Setup)
+* Executes the provided mock payment function
+* Records payment status
+* Logs rejected invoices
 
-Before running the system, you **must** create a local SQLite database that the validation agent will check invoices against. The sample invoices in `data/invoices/` reference specific items and quantities — your database needs to contain matching inventory records so the validation stage can flag mismatches, out-of-stock items, and unknown products.
+⸻
 
-Below is a starter schema and seed data that covers the core items referenced across the provided invoices:
+Project Structure
 
-```python
-import sqlite3
+agents/
+    ingestion_agent.py
+    validation_agent.py
+    approval_agent.py
+    payment_agent.py
+graph/
+    workflow.py
+models/
+    invoice.py
+tools/
+    database.py
+    file_reader.py
+    grok_client.py
+    payment.py
+tests/
+    test_workflow.py
+data/
+    invoices/
+main.py
+setup_inventory.py
 
-conn = sqlite3.connect('inventory.db')  # Persist to file so all agents can access it
-cursor = conn.cursor()
+⸻
 
-cursor.execute('CREATE TABLE IF NOT EXISTS inventory (item TEXT PRIMARY KEY, stock INTEGER)')
-cursor.execute("""
-    INSERT INTO inventory VALUES
-    ('WidgetA', 15),
-    ('WidgetB', 10),
-    ('GadgetX', 5),
-    ('FakeItem', 0)
-""")
-conn.commit()
-```
+Workflow
 
-**Why this matters:** The sample invoices are designed to test your validation logic against this database. For example:
+I implemented the workflow incrementally rather than attempting to build the complete system at once.
 
-| Scenario | Invoice | What should happen |
-|---|---|---|
-| Normal order within stock | INV-1001, INV-1004, INV-1006 | Items found, quantities valid — passes validation |
-| Quantity exceeds stock | INV-1002 (requests 20× GadgetX, only 5 in stock) | Flagged as stock mismatch |
-| Fraudulent / zero-stock item | INV-1003 (references FakeItem, 0 stock) | Flagged as out of stock or suspicious |
-| Item not in database at all | INV-1008 (SuperGizmo, MegaSprocket), INV-1016 (WidgetC) | Flagged as unknown item |
-| Invalid data | INV-1009 (negative quantity) | Flagged as data integrity issue |
+1. Read invoice files from disk.
+2. Verified that extraction worked correctly.
+3. Added validation against the inventory database.
+4. Implemented approval logic.
+5. Connected the payment stage.
+6. Added automated tests after the end-to-end workflow was stable.
+7. Improved the command-line output for easier inspection of results.
 
-You may extend the seed data with additional items or columns (e.g., unit price, category) to support richer validation — the above is the minimum needed to exercise the provided test invoices. If you want your system to also validate pricing or vendor information, consider adding tables for those as well.
+Building the system in small, verifiable stages made debugging significantly easier and ensured every component worked correctly before introducing the next one.
 
-### Mock Payment API
+⸻
 
-```python
-def mock_payment(vendor, amount):
-    print(f"Paid {amount} to {vendor}")
-    return {"status": "success"}
-```
+Engineering Decisions
 
-### Grok API Setup
+Why LangGraph?
 
-```python
-from xai import Grok
+The assessment requested a multi-agent implementation, and LangGraph provided a natural way to model the invoice lifecycle as a state-driven workflow. Each agent performs a single responsibility while operating on a shared workflow state, making the execution path easy to understand and debug.
 
-client = Grok(api_key="your_key")
-response = client.chat.completions.create(
-    model="grok-3",
-    messages=[{"role": "user", "content": "Reason about this..."}]
-)
-```
+Since invoice processing follows a predictable business process, a state graph was a good fit for representing the sequence of ingestion, validation, approval, and payment.
 
-## Running the System
+⸻
 
-The system should be executable from the command line:
+Why deterministic extraction?
 
-```bash
-python main.py --invoice_path=data/invoices/invoice1.txt
-```
+Invoice fields such as vendor name, invoice number, due date and line items follow predictable formats. I intentionally used deterministic parsing with regular expressions and structured processing rather than relying entirely on an LLM.
 
-Output should include structured logs and results.
+This approach provides consistent outputs, reduces unnecessary model calls, and makes extraction easier to test.
 
-## Evaluation Criteria
+The LLM is reserved for the stage where reasoning is actually beneficial.
 
-- **Functionality** — Does the system work end-to-end?
-- **Code Quality** — Clean, testable, well-structured code with error handling and observability
-- **Agentic Sophistication** — LLM integration, multi-agent flow, tool use, self-correction loops
-- **Shipping Mindset** — Valuable MVP delivered under ambiguity; scope ruthlessly cut where needed
-- **Presentation** — Clear translation of technical decisions to business impact
-- **Above/Beyond** - Have you made it your own? Implemented additional features that make the solution feel great? Expanded assumptions? Added to test cases?
-- **UI/UX** - Users will understand and enjoy using this system.
+⸻
+
+Why SQLite?
+
+The assessment requires validating invoices against an inventory database.
+
+SQLite provided a lightweight local database that required no external services while still allowing realistic inventory validation. Keeping the database local also makes the project simple to run on any machine.
+
+⸻
+
+Why use the LLM only during approval?
+
+I intentionally limited LLM usage to the approval stage.
+
+Extraction, validation and inventory checks should always produce deterministic results for identical inputs. Business rules such as stock validation should not depend on probabilistic model outputs.
+
+Approval reasoning, however, benefits from natural language explanations and reflection, making it the most appropriate place to integrate Grok.
+
+⸻
+
+Why include a Grok fallback?
+
+The approval agent supports Grok whenever an API key is available.
+
+If the API is unavailable or credentials are missing, the workflow automatically performs a local review instead of failing. This keeps the prototype fully executable while still supporting LLM-based reasoning when configured.
+
+⸻
+
+Testing Strategy
+
+Rather than waiting until the end of development, I verified each stage before moving to the next.
+
+Once the complete workflow was assembled, I added automated tests covering:
+
+* Successful invoice processing
+* Validation failures
+* Approval decisions
+* Payment execution
+* End-to-end workflow execution
+
+This made it easier to catch regressions while continuing development.
+
+⸻
+
+Running the Project
+
+Install dependencies
+
+pip install -r requirements.txt
+
+Create the inventory database
+
+python setup_inventory.py
+
+(Optional) Configure Grok
+
+XAI_API_KEY=your_api_key
+
+Run the workflow
+
+python main.py --invoice_path=data/invoices/invoice_1001.txt
+
+⸻
+
+Running Tests
+
+pytest
+
+Current test suite:
+
+* End-to-end workflow
+* Successful approval
+* Validation failure
+* Payment execution
+* Inventory validation
+
+⸻
+
+Sample Results
+
+Approved Invoice
+
+* Invoice extracted successfully
+* Inventory validation passed
+* Approval granted
+* Mock payment executed
+
+Rejected Invoice
+
+* Inventory validation failed
+* Approval rejected
+* Payment skipped
+* Rejection reason logged
+
+⸻
+
+Future Improvements
+
+If this prototype were extended further, the next improvements would include:
+
+* OCR support for scanned invoices
+* Human approval queue for flagged invoices
+* Integration with a real payment provider
+* Additional business validation rules
+* Retry and recovery logic for failed processing
+* Persistent workflow history and audit logs
+
+⸻
+
+Development Notes
+
+The focus of this implementation was to first build a reliable end-to-end workflow before expanding functionality.
+
+I began with a minimal pipeline capable of processing a single invoice successfully. Once that workflow was stable, I incrementally added support for additional file formats, inventory validation, approval reasoning, payment execution, automated testing, and improved command-line output.
+
+This incremental approach made it easier to validate each component independently and helped maintain a stable working system throughout development.
