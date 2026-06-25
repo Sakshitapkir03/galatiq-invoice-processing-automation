@@ -16,21 +16,46 @@ KNOWN_ITEMS = [
 
 
 def extract_invoice_id(text: str):
-    match = re.search(r"INV-\d+", text, re.IGNORECASE)
-    return match.group(0).upper() if match else None
+    patterns = [
+        r"INV-\d+",
+        r"Inv #:\s*(\d+)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            value = match.group(1) if match.groups() else match.group(0)
+            return value if value.upper().startswith("INV-") else f"INV-{value}"
+
+    return None
 
 
 def extract_vendor(text: str):
-    match = re.search(r"Vendor:\s*(.+)", text, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
+    patterns = [
+        r"Vendor:\s*(.+)",
+        r"Vndr:\s*(.+)",
+        r"Supplier:\s*(.+)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+
     return None
 
 
 def extract_due_date(text: str):
-    match = re.search(r"Due Date:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})", text, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
+    patterns = [
+        r"Due Date:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})",
+        r"Due Dt:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+
     return None
 
 
@@ -39,6 +64,7 @@ def extract_amount(text: str):
         r"Total Amount:\s*\$?([\d,]+(?:\.\d{2})?)",
         r"Total:\s*\$?([\d,]+(?:\.\d{2})?)",
         r"Amount:\s*\$?([\d,]+(?:\.\d{2})?)",
+        r"Amt:\s*\$?([\d,]+(?:\.\d{2})?)",
     ]
 
     for pattern in patterns:
@@ -53,16 +79,21 @@ def extract_items(text: str):
     items = []
 
     for item_name in KNOWN_ITEMS:
-        pattern = rf"{item_name}\s+qty:\s*(-?\d+)"
-        match = re.search(pattern, text, re.IGNORECASE)
+        patterns = [
+            rf"{item_name}\s+qty:\s*(-?\d+)",
+            rf"{item_name}\s+qty\s+(-?\d+)",
+        ]
 
-        if match:
-            items.append(
-                InvoiceItem(
-                    name=item_name,
-                    quantity=int(match.group(1)),
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                items.append(
+                    InvoiceItem(
+                        name=item_name,
+                        quantity=int(match.group(1)),
+                    )
                 )
-            )
+                break
 
     return items
 
