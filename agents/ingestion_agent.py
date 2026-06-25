@@ -15,10 +15,17 @@ KNOWN_ITEMS = [
 ]
 
 
+def clean_money(value):
+    if value is None:
+        return None
+    return float(str(value).replace("$", "").replace(",", "").strip())
+
+
 def extract_invoice_id(text: str):
     patterns = [
         r"INV-\d+",
         r"Inv #:\s*(\d+)",
+        r"invoice_number,([A-Za-z0-9-]+)",
     ]
 
     for pattern in patterns:
@@ -35,6 +42,7 @@ def extract_vendor(text: str):
         r"Vendor:\s*(.+)",
         r"Vndr:\s*(.+)",
         r"Supplier:\s*(.+)",
+        r"vendor,([^\n]+)",
     ]
 
     for pattern in patterns:
@@ -49,6 +57,7 @@ def extract_due_date(text: str):
     patterns = [
         r"Due Date:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})",
         r"Due Dt:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})",
+        r"due_date,([0-9]{4}-[0-9]{2}-[0-9]{2})",
     ]
 
     for pattern in patterns:
@@ -65,12 +74,13 @@ def extract_amount(text: str):
         r"Total:\s*\$?([\d,]+(?:\.\d{2})?)",
         r"Amount:\s*\$?([\d,]+(?:\.\d{2})?)",
         r"Amt:\s*\$?([\d,]+(?:\.\d{2})?)",
+        r"total,([\d,]+(?:\.\d{2})?)",
     ]
 
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            return float(match.group(1).replace(",", ""))
+            return clean_money(match.group(1))
 
     return None
 
@@ -82,20 +92,32 @@ def extract_items(text: str):
         patterns = [
             rf"{item_name}\s+qty:\s*(-?\d+)",
             rf"{item_name}\s+qty\s+(-?\d+)",
+            rf"{item_name}\s+(-?\d+)\s+\$",
         ]
 
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                items.append(
-                    InvoiceItem(
-                        name=item_name,
-                        quantity=int(match.group(1)),
-                    )
-                )
+                items.append(InvoiceItem(name=item_name, quantity=int(match.group(1))))
                 break
 
-    return items
+    if items:
+        return items
+
+    csv_items = []
+    lines = [line.strip() for line in text.splitlines()]
+    current_item = None
+
+    for line in lines:
+        if line.lower().startswith("item,"):
+            current_item = line.split(",", 1)[1].strip()
+
+        elif line.lower().startswith("quantity,") and current_item:
+            quantity = int(line.split(",", 1)[1].strip())
+            csv_items.append(InvoiceItem(name=current_item, quantity=quantity))
+            current_item = None
+
+    return csv_items
 
 
 def parse_json_invoice(text: str):
@@ -104,9 +126,18 @@ def parse_json_invoice(text: str):
     except json.JSONDecodeError:
         return None
 
-    items = []
+    vendor = data.get("vendor")
+    if isinstance(vendor, dict):
+        vendor = vendor.get("name")
 
-    for item in data.get("items", []):
+    amount = (
+        data.get("amount")
+        or data.get("total")
+        or data.get("total_amount")
+    )
+
+    items = []
+    for item in data.get("items", data.get("line_items", [])):
         name = item.get("name") or item.get("item")
         quantity = item.get("quantity") or item.get("qty")
 
@@ -115,8 +146,8 @@ def parse_json_invoice(text: str):
 
     return InvoiceData(
         invoice_id=data.get("invoice_id") or data.get("invoice_number"),
-        vendor=data.get("vendor"),
-        amount=float(data["amount"]) if data.get("amount") is not None else None,
+        vendor=vendor,
+        amount=clean_money(amount),
         due_date=data.get("due_date"),
         items=items,
         raw_text=text,
