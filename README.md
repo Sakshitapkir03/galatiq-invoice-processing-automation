@@ -1,100 +1,131 @@
-Invoice Processing Automation
 
-Project Overview
+# Invoice Processing Automation
+
+---
+
+![Python](https://img.shields.io/badge/Python-3.9-blue)
+
+![LangGraph](https://img.shields.io/badge/LangGraph-StateGraph-success)
+
+![SQLite](https://img.shields.io/badge/SQLite-Database-blue)
+
+![Pytest](https://img.shields.io/badge/Tests-5_Passing-brightgreen)
+
+## Table of Contents
+
+- Project Overview
+- Requirements Mapping
+- Architecture
+- Project Structure
+- Workflow
+- Engineering Decisions
+- Running the Project
+- Running Tests
+- Sample Results
+- Future Improvements
+- Development Notes
+
+## Project Overview
 
 This project implements an end-to-end invoice processing workflow for Acme Corp using a multi-agent architecture built with LangGraph. The workflow ingests invoices from multiple file formats, extracts structured information, validates invoice data against a local SQLite inventory database, performs an approval decision with a review step, and finally executes a mock payment for approved invoices.
 
 The implementation follows the assessment requirements while keeping the workflow deterministic wherever possible and using an LLM only where reasoning adds value. The goal was to build a working prototype that is reliable, testable, and easy to extend.
 
-⸻
+---
 
-Requirements Mapping
+# Requirements Mapping
 
-Assessment Requirement	Implementation
-Multi-agent workflow	LangGraph StateGraph
-Invoice ingestion	TXT, PDF, CSV and JSON
-Structured extraction	Pydantic models
-Inventory validation	SQLite database
-Approval reasoning	Rule-based approval with reflection and optional Grok review
-Payment	Mock payment function
-Local execution	Python CLI
-Automated tests	pytest
+| Assessment Requirement | Implementation |
+|------------------------|----------------|
+| Multi-agent workflow | LangGraph StateGraph |
+| Invoice ingestion | TXT, PDF, CSV and JSON |
+| Structured extraction | Pydantic models |
+| Inventory validation | SQLite database |
+| Approval reasoning | Rule-based approval with reflection and optional Grok review |
+| Payment | Mock payment function |
+| Local execution | Python CLI |
+| Automated tests | pytest |
 
-⸻
+---
 
-Architecture
+# Architecture
 
-Invoice
-    │
-    ▼
-Ingestion Agent
-    │
-    ▼
-Validation Agent
-    │
-    ▼
-Approval Agent
-    │
-    ▼
-Payment Agent
+```mermaid
+flowchart LR
 
-Ingestion Agent
+A[Invoice]
+-->B[Ingestion Agent]
+-->C[Validation Agent]
+-->D[Approval Agent]
+-->E[Payment Agent]
+```
 
-* Reads invoice files
-* Supports TXT, PDF, JSON and CSV
-* Extracts structured invoice information
-* Produces a shared workflow state
+### Ingestion Agent
 
-Validation Agent
+- Reads invoice files
+- Supports TXT, PDF, JSON and CSV
+- Extracts structured invoice information
+- Produces a shared workflow state
 
-* Validates required fields
-* Checks inventory using SQLite
-* Detects unknown items
-* Detects insufficient stock
-* Detects invalid quantities
+### Validation Agent
 
-Approval Agent
+- Validates required fields
+- Checks inventory using SQLite
+- Detects unknown items
+- Detects insufficient stock
+- Detects invalid quantities
 
-* Applies business approval rules
-* Reviews validation results
-* Produces approval or rejection
-* Performs a reflection step
-* Uses Grok when configured and gracefully falls back to local reasoning if unavailable
+### Approval Agent
 
-Payment Agent
+- Applies business approval rules
+- Reviews validation results
+- Produces approval or rejection
+- Performs a reflection step
+- Uses Grok when configured and gracefully falls back to local reasoning if unavailable
 
-* Executes the provided mock payment function
-* Records payment status
-* Logs rejected invoices
+### Payment Agent
 
-⸻
+- Executes the provided mock payment function
+- Records payment status
+- Logs rejected invoices
 
-Project Structure
+---
 
-agents/
-    ingestion_agent.py
-    validation_agent.py
-    approval_agent.py
-    payment_agent.py
-graph/
-    workflow.py
-models/
-    invoice.py
-tools/
-    database.py
-    file_reader.py
-    grok_client.py
-    payment.py
-tests/
-    test_workflow.py
-data/
-    invoices/
-main.py
-setup_inventory.py
+# Project Structure
 
-⸻
+```text
+.
+├── agents
+│   ├── ingestion_agent.py
+│   ├── validation_agent.py
+│   ├── approval_agent.py
+│   └── payment_agent.py
+│
+├── graph
+│   └── workflow.py
+│
+├── models
+│   └── invoice.py
+│
+├── tools
+│   ├── database.py
+│   ├── file_reader.py
+│   ├── grok_client.py
+│   └── payment.py
+│
+├── tests
+│   └── test_workflow.py
+│
+├── data
+│   └── invoices
+│
+├── main.py
+└── setup_inventory.py
+```
 
-Workflow
+---
+
+# Workflow
 
 I implemented the workflow incrementally rather than attempting to build the complete system at once.
 
@@ -108,19 +139,18 @@ I implemented the workflow incrementally rather than attempting to build the com
 
 Building the system in small, verifiable stages made debugging significantly easier and ensured every component worked correctly before introducing the next one.
 
-⸻
+---
 
-Engineering Decisions
+# Engineering Decisions
 
-Why LangGraph?
+## Why LangGraph?
 
 The assessment requested a multi-agent implementation, and LangGraph provided a natural way to model the invoice lifecycle as a state-driven workflow. Each agent performs a single responsibility while operating on a shared workflow state, making the execution path easy to understand and debug.
 
 Since invoice processing follows a predictable business process, a state graph was a good fit for representing the sequence of ingestion, validation, approval, and payment.
 
-⸻
-
-Why deterministic extraction?
+---
+## Why deterministic extraction?
 
 Invoice fields such as vendor name, invoice number, due date and line items follow predictable formats. I intentionally used deterministic parsing with regular expressions and structured processing rather than relying entirely on an LLM.
 
@@ -128,17 +158,17 @@ This approach provides consistent outputs, reduces unnecessary model calls, and 
 
 The LLM is reserved for the stage where reasoning is actually beneficial.
 
-⸻
+---
 
-Why SQLite?
+## Why SQLite?
 
 The assessment requires validating invoices against an inventory database.
 
 SQLite provided a lightweight local database that required no external services while still allowing realistic inventory validation. Keeping the database local also makes the project simple to run on any machine.
 
-⸻
+---
 
-Why use the LLM only during approval?
+## Why use the LLM only during approval?
 
 I intentionally limited LLM usage to the approval stage.
 
@@ -146,98 +176,156 @@ Extraction, validation and inventory checks should always produce deterministic 
 
 Approval reasoning, however, benefits from natural language explanations and reflection, making it the most appropriate place to integrate Grok.
 
-⸻
+---
 
-Why include a Grok fallback?
+## Why include a Grok fallback?
 
 The approval agent supports Grok whenever an API key is available.
 
 If the API is unavailable or credentials are missing, the workflow automatically performs a local review instead of failing. This keeps the prototype fully executable while still supporting LLM-based reasoning when configured.
 
-⸻
+---
 
-Testing Strategy
+## Testing Strategy
 
 Rather than waiting until the end of development, I verified each stage before moving to the next.
 
 Once the complete workflow was assembled, I added automated tests covering:
 
-* Successful invoice processing
-* Validation failures
-* Approval decisions
-* Payment execution
-* End-to-end workflow execution
+- Successful invoice processing
+- Validation failures
+- Approval decisions
+- Payment execution
+- End-to-end workflow execution
 
 This made it easier to catch regressions while continuing development.
 
-⸻
+---
 
-Running the Project
+# Running the Project
 
-Install dependencies
+## 1. Install dependencies
 
+```bash
 pip install -r requirements.txt
+```
 
-Create the inventory database
+## 2. Create the inventory database
 
+```bash
 python setup_inventory.py
+```
 
-(Optional) Configure Grok
+## 3. (Optional) Configure Grok
 
+Create a `.env` file in the project root.
+
+```text
 XAI_API_KEY=your_api_key
+```
 
-Run the workflow
+If an API key is not configured, the workflow automatically falls back to the built-in local approval review.
 
+## 4. Run the workflow
+
+```bash
 python main.py --invoice_path=data/invoices/invoice_1001.txt
+```
 
-⸻
+You can also test other invoice formats.
 
-Running Tests
+```bash
+python main.py --invoice_path=data/invoices/invoice_1004.json
 
+python main.py --invoice_path=data/invoices/invoice_1006.csv
+
+python main.py --invoice_path=data/invoices/invoice_1011.pdf
+```
+
+---
+
+# Running Tests
+
+Execute the automated workflow tests using:
+
+```bash
 pytest
+```
 
-Current test suite:
+Current test suite covers:
 
-* End-to-end workflow
-* Successful approval
-* Validation failure
-* Payment execution
-* Inventory validation
+- End-to-end workflow execution
+- Successful invoice approval
+- Validation failures
+- Payment execution
+- Inventory validation
 
-⸻
+---
 
-Sample Results
+# Sample Results
 
-Approved Invoice
+## Approved Invoice
 
-* Invoice extracted successfully
-* Inventory validation passed
-* Approval granted
-* Mock payment executed
+```text
+Invoice
+   │
+   ▼
+Validation Passed
+   │
+   ▼
+Approval Granted
+   │
+   ▼
+Mock Payment Executed
+```
 
-Rejected Invoice
+Expected outcome:
 
-* Inventory validation failed
-* Approval rejected
-* Payment skipped
-* Rejection reason logged
+- Invoice extracted successfully
+- Inventory validation passed
+- Approval granted
+- Mock payment executed
 
-⸻
+---
 
-Future Improvements
+## Rejected Invoice
+
+```text
+Invoice
+   │
+   ▼
+Validation Failed
+   │
+   ▼
+Approval Rejected
+   │
+   ▼
+Payment Skipped
+```
+
+Expected outcome:
+
+- Inventory validation failed
+- Approval rejected
+- Payment skipped
+- Rejection reason logged
+
+---
+
+# Future Improvements
 
 If this prototype were extended further, the next improvements would include:
 
-* OCR support for scanned invoices
-* Human approval queue for flagged invoices
-* Integration with a real payment provider
-* Additional business validation rules
-* Retry and recovery logic for failed processing
-* Persistent workflow history and audit logs
+- OCR support for scanned invoices
+- Human approval queue for flagged invoices
+- Integration with a real payment provider
+- Additional business validation rules
+- Retry and recovery logic for failed processing
+- Persistent workflow history and audit logs
 
-⸻
+---
 
-Development Notes
+# Development Notes
 
 The focus of this implementation was to first build a reliable end-to-end workflow before expanding functionality.
 
