@@ -1,5 +1,5 @@
 from models.schemas import ApprovalDecision
-
+from tools.grok_client import review_approval
 
 APPROVAL_THRESHOLD = 10000
 
@@ -33,7 +33,9 @@ def approval_agent(state):
         decision = "APPROVED"
         reason = "Invoice passed validation and is within the standard approval threshold."
 
-    reflection = reflect_on_decision(invoice, validation, decision, reason)
+    grok_review = review_approval(invoice, validation, decision, reason)
+    decision = grok_review.get("decision", decision)
+    reflection = grok_review.get("reflection", reflect_on_decision(invoice, validation, decision, reason))
 
     approval = ApprovalDecision(
         decision=decision,
